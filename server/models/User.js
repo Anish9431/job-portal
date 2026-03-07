@@ -8,6 +8,6 @@ const userSchema = new mongoose.Schema({
   resume: { type: String, default: "" }
 });
 
-const User = mongoose.model('User', userSchema);
+const User = mongoose.models.User || mongoose.model('User', userSchema, 'users');
 
 export default User;
