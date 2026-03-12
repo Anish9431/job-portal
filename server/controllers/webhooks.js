@@ -8,52 +8,68 @@ export const clerkWebhooks = async (req, res) => {
         const whook = new Webhook(process.env.CLERK_WEBHOOK_SECRET)
 
         // Verifying Headers
-        await whook.verify(JSON.stringify(req.body), {
-            "svix-id": req.headers["svix-id"],
-            "svix-timestamp": req.headers["svix-timestamp"],
-            "svix-signature": req.headers["svix-signature"]
-        })
+        if (!req.rawBody) {
+            console.log("Webhook Error: Missing raw body for verification");
+            return res.status(400).json({ success: false, message: "Missing raw body" });
+        }
 
-        // getting data from requeat body
+        try {
+            whook.verify(req.rawBody, {
+                "svix-id": req.headers["svix-id"],
+                "svix-timestamp": req.headers["svix-timestamp"],
+                "svix-signature": req.headers["svix-signature"]
+            })
+        } catch (err) {
+            console.log("Webhook Verification Failed:", err.message);
+            return res.status(400).json({ success: false, message: "Invalid signature" });
+        }
+
+        // getting data from request body
         const { data, type } = req.body;
-        console.log("Webhook received type:", type);
-        console.log("Webhook data received:", JSON.stringify(data, null, 2));
+        console.log(`Processing Webhook: ${type} for User ID: ${data.id}`);
 
         // switch case for different events
         switch (type) {
             case "user.created": {
                 const userdata = {
                     _id: data.id,
-                    name: (data.first_name || "") + " " + (data.last_name || ""),
+                    clerkId: data.id,
+                    name: (data.first_name || data.username || "User").trim() + (data.last_name ? " " + data.last_name : ""),
                     email: data.email_addresses && data.email_addresses[0] ? data.email_addresses[0].email_address : "",
-                    image: data.image_url,
+                    image: data.image_url || data.profile_image_url || "",
                     resume: ''
                 }
-                console.log("Attempting to create user with:", userdata);
-                await User.create(userdata);
+                
+                // Using findOneAndUpdate with upsert: true is safer than .create()
+                // It avoids "Duplicate Key" errors if Clerk sends the event twice
+                await User.findOneAndUpdate({ _id: data.id }, userdata, { upsert: true, new: true });
+                console.log("User synced successfully (created/upserted)");
                 return res.json({ success: true })
             }
 
             case "user.updated": {
                 const userdata = {
-                    name: (data.first_name || "") + " " + (data.last_name || ""),
+                    name: (data.first_name || data.username || "User").trim() + (data.last_name ? " " + data.last_name : ""),
                     email: data.email_addresses && data.email_addresses[0] ? data.email_addresses[0].email_address : "",
-                    image: data.image_url,
+                    image: data.image_url || data.profile_image_url || "",
                 }
                 await User.findByIdAndUpdate(data.id, userdata);
+                console.log("User updated successfully");
                 return res.json({ success: true })
             }
 
             case "user.deleted": {
                 await User.findByIdAndDelete(data.id);
+                console.log("User deleted successfully");
                 return res.json({ success: true })
             }
             default:
+                console.log("Unhandled webhook type:", type);
                 break;
         }
         res.json({ success: true })
     } catch (error) {
-        console.log("Webhook Error:", error.message);
+        console.log("Webhook Controller Error:", error.message);
         res.status(500).json({ success: false, message: error.message })
     }
-}
+}
