@@ -7,7 +7,6 @@ import { clerkWebhooks } from './controllers/webhooks.js';
 
 // App Config
 const app = express();
-const PORT = process.env.PORT || 5000;
 
 // connect to database
 connectDB();
@@ -28,8 +27,12 @@ app.get('/', (req, res) => {
 
 app.post('/webhooks', clerkWebhooks);
 
-app.listen(PORT, () => {
-    console.log(`Server is running on port ${PORT}`);
-});
+// Only listen locally - Vercel handles this in production
+if (process.env.NODE_ENV !== 'production') {
+    const PORT = process.env.PORT || 5000;
+    app.listen(PORT, () => {
+        console.log(`Server is running on port ${PORT}`);
+    });
+}
 
 export default app;
